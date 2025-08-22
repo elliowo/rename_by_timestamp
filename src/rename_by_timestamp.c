@@ -34,12 +34,13 @@ int is_timestamp_formatted(const char *filename) {
 int process_file(const char *filepath) {
     struct stat st;
     if (stat(filepath, &st) == -1) {
-	perror("stat");
-	return 1;
+        perror("stat");
+        return 1;
     }
+
     if (S_ISDIR(st.st_mode)) {
-	printf("Skipping directory: %s\n", filepath);
-	return 0;
+        printf("Skipping directory: %s\n", filepath);
+        return 0;
     }
 
     time_t t = st.st_mtime;
@@ -51,58 +52,69 @@ int process_file(const char *filepath) {
     const char *filename = last_slash ? last_slash + 1 : filepath;
 
     if (is_timestamp_formatted(filename)) {
-	char existing[25];
-	strncpy(existing, filename, 19);
-	existing[19] = '\0';
-	if (strcmp(existing, timestamp) == 0) {
-	    printf("File is already named with the correct timestamp: %s\n", filepath);
-	    return 0;
-	}
+        char existing[25];
+        strncpy(existing, filename, 19);
+        existing[19] = '\0';
+        if (strcmp(existing, timestamp) == 0) {
+            printf("File is already named with the correct timestamp: %s\n", filepath);
+            return 0;
+        }
     }
 
-    char new_name[256];
-    const char *dot = strrchr(filepath, '.');
+    char new_filename[32];
+    const char *dot = strrchr(filename, '.');
     if (dot && *(dot + 1)) {
-	snprintf(new_name, sizeof(new_name), "%s%.*s", timestamp, (int)(dot - filepath), filepath);
-	strcat(new_name, dot);
+        snprintf(new_filename, sizeof(new_filename), "%s%s", timestamp, dot);
     } else {
-	strcpy(new_name, timestamp);
+        snprintf(new_filename, sizeof(new_filename), "%s", timestamp);
     }
 
-    if (rename(filepath, new_name) == -1) {
-	perror("rename");
-	return 1;
+    // Build full new path
+    char new_path[512];
+    if (last_slash) {
+        int dir_len = last_slash - filepath + 1;
+        if (dir_len > 0) {
+            snprintf(new_path, sizeof(new_path), "%.*s%s", dir_len, filepath, new_filename);
+        } else {
+            snprintf(new_path, sizeof(new_path), "%s", new_filename);
+        }
+    } else {
+        snprintf(new_path, sizeof(new_path), "%s", new_filename);
     }
 
-    printf("File renamed to: %s\n", new_name);
+    if (rename(filepath, new_path) == -1) {
+        perror("rename");
+        return 1;
+    }
+
+    printf("File renamed to: %s\n", new_path);
     return 0;
 }
 
 int main(int argc, char *argv[]) {
     if (argc < 2) {
-      //fprintf(stderr, "Error: Invalid number of arguments\n");
-	print_usage(argv[0]);
-	return 1;
+        print_usage(argv[0]);
+        return 1;
     }
 
     for (int i = 1; i < argc; i++) {
-	const char *pattern = argv[i];
-	int has_wildcard = strpbrk(pattern, "*?[") != NULL;
+        const char *pattern = argv[i];
+        int has_wildcard = strpbrk(pattern, "*?[") != NULL;
 
-	if (has_wildcard) {
-	    glob_t g;
-	    if (glob(pattern, GLOB_TILDE, NULL, &g) == 0) {
-		for (size_t j = 0; j < g.gl_pathc; j++) {
-		    struct stat st;
-		    if (stat(g.gl_pathv[j], &st) == 0 && S_ISREG(st.st_mode)) {
-			process_file(g.gl_pathv[j]);
-		    }
-		}
-		globfree(&g);
-	    }
-	} else {
-	    process_file(pattern);
-	}
+        if (has_wildcard) {
+            glob_t g;
+            if (glob(pattern, GLOB_TILDE, NULL, &g) == 0) {
+                for (size_t j = 0; j < g.gl_pathc; j++) {
+                    struct stat st;
+                    if (stat(g.gl_pathv[j], &st) == 0 && S_ISREG(st.st_mode)) {
+                        process_file(g.gl_pathv[j]);
+                    }
+                }
+                globfree(&g);
+            }
+        } else {
+            process_file(pattern);
+        }
     }
 
     return 0;
